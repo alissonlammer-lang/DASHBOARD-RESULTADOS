@@ -1307,7 +1307,8 @@ Chart.register(ChartDataLabels);
 /* ── Column detection ── */
 function detectColumns(headers) {
   const map = {
-    BASE:        ['BASE','SVC','BASE_OPERACAO','BASE_OPERAÇÃO','BASE_NAME'],
+    // BASE deve vir da coluna BASE. SVC representa o site/operação (ex.: SAL1), não a base operacional.
+    BASE:        ['BASE','BASE_OPERACAO','BASE_OPERAÇÃO','BASE_NAME'],
     CARRIER:     ['CARRIER_NAME','MLP','CARRIER','OPERADORA','TRANSPORTADORA'],
     DATA:        ['DATA_INICIO','DATA','DATE','DT','DT_ENTREGA','DATA_ENTREGA','DATA_DESPACHO','DT_INICIO'],
     DATA_FIM:    ['DATA_FIM','DATA_CONCLUSAO','DATA_CONCLUSÃO','DATA_ENCERRAMENTO','DT_FIM','DATA_FINAL'],
@@ -1334,8 +1335,13 @@ function detectColumns(headers) {
   };
   const uH = headers.map(h => h.toUpperCase().trim().replace(/\s+/g,'_'));
   for (const [key, cands] of Object.entries(map)) {
-    const f = uH.find(h => cands.includes(h));
-    if (f) COL[key] = headers[uH.indexOf(f)];
+    // Prioriza a ordem definida em cands, em vez da ordem física das colunas no CSV.
+    // Isso evita que SVC (primeira coluna) seja confundida com BASE quando ambas existem.
+    const normalizedCandidates = cands.map(c => c.toUpperCase().trim().replace(/\s+/g,'_'));
+    const idx = normalizedCandidates
+      .map(candidate => uH.indexOf(candidate))
+      .find(index => index >= 0);
+    if (idx !== undefined) COL[key] = headers[idx];
   }
   const fallbacks = {
     DESPACHADOS: /despach/i, ENTREGUES: h => /entreg/i.test(h) && !/insu/i.test(h),
