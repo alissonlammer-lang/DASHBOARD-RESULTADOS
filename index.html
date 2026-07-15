@@ -1094,7 +1094,7 @@ table.detail tr:hover td { background: var(--surface-1); }
       <div class="detail-card">
         <div class="detail-card-title">⏱ Encerramento de rotas (D+)</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
-          Rotas agrupadas por <strong>quando foram encerradas</strong> em relação ao dia de despacho. <strong>Pendente</strong> = rota sem data de conclusão (ainda não finalizada). <strong>D+1 / D+2</strong> = fechou 1 ou 2 dias depois do despacho. A coluna <strong>ORH (h)</strong> mostra as horas na rota; rotas acima de 12h ("bateram" o limite) indicam onde o MLP deveria ter ativado pernoite/sleepover — use o filtro ao lado da tabela para isolar essas rotas por MLP. Clique num card para filtrar a tabela.
+          Rotas agrupadas por <strong>quando foram encerradas</strong> em relação ao dia de despacho. <strong>Pendente</strong> = rota sem HORA_FIM registrada (ainda não finalizada). <strong>D+1 / D+2</strong> = fechou 1 ou 2 dias depois do despacho. A coluna <strong>ORH (h)</strong> usa o valor da coluna ORH_HOURS quando plausível; quando ele estiver vazio ou fora de 0–24h (erro de exportação), calcula automaticamente pela diferença entre HORA_INICIO e HORA_FIM (indicado com 🕐, e ⚠️ quando o ORH_HOURS informado for suspeito). Rotas acima de 12h ("bateram" o limite) indicam onde o MLP deveria ter ativado pernoite/sleepover — use o filtro ao lado da tabela para isolar essas rotas por MLP. Clique num card para filtrar a tabela.
         </div>
         <div id="encSummary" class="enc-summary"></div>
       </div>
@@ -1333,6 +1333,7 @@ function detectColumns(headers) {
     CLUSTER:         ['CLUSTER','CLUSTER_ID','CLUSTER_ROTA'],
     CICLO:           ['CICLO','CICLO_AM_PM','CICLO_ENTREGA','CYCLE'],
     HORA_FIM:        ['hora_fim','HORA_FIM','HORA_FIM_ROTA','END_TIME'],
+    HORA_INICIO:     ['hora_inicio','HORA_INICIO','HORA_INICIO_ROTA','START_TIME'],
     TIPO_VEICULO:    ['TIPO_VEICULO','TIPO_VEICULO_PADRAO','Tipo_veiculo','TIPO','VEHICLE_TYPE','TIPO_DE_VEICULO'],
     ENC_DMAIS:       ['ENCERRAMENTO_D_MAIS','ENCERRAMENTO_DMAIS','DIAS_ENCERRAMENTO','ENCERR_D_MAIS','D_MAIS','ENCERRAMENTO'],
   };
@@ -1362,6 +1363,7 @@ function detectColumns(headers) {
     CLUSTER: h => /^cluster$/i.test(h),
     CICLO: h => /^ciclo$/i.test(h),
     HORA_FIM: h => /^hora_fim$/i.test(h),
+    HORA_INICIO: h => /^hora_inicio$/i.test(h) || /^hora_in[íi]cio$/i.test(h),
     TIPO_VEICULO: h => /tipo.*veic|veic.*tipo|vehicle.*type|type.*vehicle/i.test(h),
     ENC_DMAIS: h => /d_?mais/i.test(h) || /encerr/i.test(h),
   };
@@ -1374,7 +1376,15 @@ function detectColumns(headers) {
   }
 }
 
-function n(v) { return parseFloat(v) || 0; }
+function n(v) {
+  if (v === null || v === undefined) return 0;
+  let s = String(v).trim();
+  if (s === '') return 0;
+  // formato BR: "1.234,56" ou "6,73" -> converte para ponto decimal
+  if (s.includes(',')) s = s.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+  const f = parseFloat(s);
+  return isNaN(f) ? 0 : f;
+}
 
 // ── DPPH correto: deduplica por ROUTE_ID, soma ENTREGUES / soma ORH_HOURS ──
 function calcDpph(rows) {
@@ -3074,7 +3084,11 @@ function _encCompute() {
     const desp = (r[COL.DATA]||'').trim();
     const conc = concCol ? (r[concCol]||'').trim() : '';
     const encRaw = encCol ? (r[encCol] ?? '').toString().trim() : '';
-    // primário: diferença despacho × conclusão
+    const timing = _routeTiming(r);
+    // primário: diferença despacho × conclusão (DATA_FIM) — é o único sinal confiável de rota
+    // realmente encerrada. HORA_FIM NÃO serve pra isso: na prática ela reflete o horário do
+    // último checkpoint e continua sendo atualizada mesmo com a rota ainda em curso (validado
+    // com casos reais em que HORA_FIM tinha valor mas a rota seguia aberta no sistema).
     let dPlus = null, pending = false;
     if (!conc) pending = true;
     else {
@@ -3091,9 +3105,24 @@ function _encCompute() {
     else if (dPlus === 2) bucket = 'D2';
     else bucket = 'D3';
     const ins = Math.max(0, n(r[COL.DESPACHADOS]) - n(r[COL.ENTREGUES]));
-    const hrs = COL.ORH_HOURS ? n(r[COL.ORH_HOURS]) : null;
+    // ORH: rota pendente (em aberto) -> estima pelas horas decorridas desde HORA_INICIO até agora
+    // (HORA_FIM não é confiável enquanto a rota está em curso). Rota já encerrada -> usa ORH_HOURS
+    // quando plausível (0–24h), senão calcula pela diferença real HORA_INICIO/HORA_FIM/DATA_FIM.
+    const orhRaw = COL.ORH_HOURS ? n(r[COL.ORH_HOURS]) : null;
+    const orhValid = orhRaw !== null && orhRaw > 0 && orhRaw <= 24;
+    let hrs = null, hrsSource = '';
+    if (pending) {
+      const elapsed = _elapsedSinceStart(r);
+      if (elapsed !== null) { hrs = elapsed; hrsSource = 'aberto'; }
+      else if (orhValid) { hrs = orhRaw; hrsSource = 'orh'; }
+    } else {
+      if (orhValid) { hrs = orhRaw; hrsSource = 'orh'; }
+      else if (timing) { hrs = timing.hours; hrsSource = 'horario'; }
+      else if (orhRaw !== null && orhRaw !== 0) { hrs = orhRaw; hrsSource = 'orh'; }
+    }
     const over12 = hrs !== null && !isNaN(hrs) && hrs > 12;
-    rows.push({ id:k, base:(r[COL.BASE]||'').trim(), mlp:(r[COL.CARRIER]||'').trim(), drv:(drvOf(r)||'').toString().trim(), desp, conc, encRaw, dPlus, pending, bucket, ins, hrs, over12 });
+    const suspicious = !pending && orhRaw !== null && orhRaw !== 0 && !orhValid; // ORH_HOURS informado mas fora do range plausível
+    rows.push({ id:k, base:(r[COL.BASE]||'').trim(), mlp:(r[COL.CARRIER]||'').trim(), drv:(drvOf(r)||'').toString().trim(), desp, conc, encRaw, dPlus, pending, bucket, ins, hrs, hrsSource, suspicious, over12 });
   });
   return rows;
 }
@@ -3152,7 +3181,7 @@ function renderEncerramento() {
     tb.innerHTML = rows.slice(0, 1000).map(x => `<tr>
       <td>${x.id||'—'}</td><td>${x.base||'—'}</td><td>${x.mlp||'—'}</td><td>${x.drv||'—'}</td>
       <td>${x.ins ? '<span class="pill bad">'+x.ins.toLocaleString('pt-BR')+'</span>' : '0'}</td>
-      <td>${x.hrs !== null && !isNaN(x.hrs) ? `<span class="pill ${x.over12?'bad':'good'}">${x.hrs.toFixed(1)}h</span>` : '—'}</td>
+      <td>${x.hrs !== null && !isNaN(x.hrs) ? `<span class="pill ${x.over12?'bad':'good'}" title="${x.hrsSource==='horario'?'Calculado por HORA_INICIO/HORA_FIM (ORH_HOURS ausente ou inválido)':x.hrsSource==='aberto'?'Rota ainda em andamento — horas decorridas desde o início até agora (estimativa, não é o ORH final)':'Valor da coluna ORH_HOURS'}">${x.hrs.toFixed(1)}h${x.hrsSource==='horario'?' 🕐':x.hrsSource==='aberto'?' ⏳':''}</span>${x.suspicious?' <span title="ORH_HOURS informado é implausível (negativo ou muito alto); horário calculado por HORA_INICIO/HORA_FIM foi usado como referência">⚠️</span>':''}` : '—'}</td>
       <td>${x.desp||'—'}</td><td>${x.conc||'<span style="color:var(--danger-text)">—</span>'}</td>
       <td>${x.encRaw !== '' ? x.encRaw : (x.pending ? '—' : (x.dPlus<=0?'D+0':'D+'+x.dPlus))}</td>
       <td>${badge(x)}</td></tr>`).join('');
@@ -3164,10 +3193,16 @@ function renderEncerramento() {
     const byMlp12 = {};
     over12All.forEach(x => { const k = x.mlp||'N/D'; byMlp12[k] = (byMlp12[k]||0)+1; });
     const topMlp12 = Object.entries(byMlp12).sort((a,b)=>b[1]-a[1])[0];
+    const viaHorario = all.filter(x => x.hrsSource === 'horario').length;
+    const viaAberto = all.filter(x => x.hrsSource === 'aberto').length;
+    const suspeitas = all.filter(x => x.suspicious).length;
     const impactTxt = over12All.length
       ? ` · ⚠️ ${over12All.length.toLocaleString('pt-BR')} rota(s) >12h no recorte (${over12Pct}%)${topMlp12?` · MLP mais afetada: ${topMlp12[0]} (${topMlp12[1].toLocaleString('pt-BR')})`:''}`
       : '';
-    cnt.textContent = `${rows.length.toLocaleString('pt-BR')} rota(s) exibida(s)${rows.length>1000?' (mostrando as 1000 primeiras)':''} · ${all.length.toLocaleString('pt-BR')} rotas no total${impactTxt}`;
+    const extraTxt = (viaHorario || suspeitas || viaAberto)
+      ? ` · ${viaHorario.toLocaleString('pt-BR')} rota(s) com ORH calculado por HORA_INICIO/HORA_FIM${viaAberto?` · ${viaAberto.toLocaleString('pt-BR')} em andamento (⏳ estimativa em tempo real)`:''}${suspeitas?` · ${suspeitas.toLocaleString('pt-BR')} com ORH_HOURS suspeito (fora de 0–24h)`:''}`
+      : '';
+    cnt.textContent = `${rows.length.toLocaleString('pt-BR')} rota(s) exibida(s)${rows.length>1000?' (mostrando as 1000 primeiras)':''} · ${all.length.toLocaleString('pt-BR')} rotas no total${impactTxt}${extraTxt}`;
   }
   _renderEncDrivers(all);
 }
@@ -3382,6 +3417,58 @@ function parseDateBR(s) {
   const p = s.split('/');
   if (p.length === 3) return new Date(+p[2], +p[1]-1, +p[0]);
   return new Date(s);
+}
+
+// ── Horário real da rota (a partir de HORA_INICIO / HORA_FIM), usado como
+// cross-check/fallback para ORH_HOURS e para detectar encerramento quando
+// a coluna de conclusão (DATA_FIM) está vazia mas a rota já tem horário de fim. ──
+function _timeToSec(t) {
+  if (!t) return null;
+  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  return (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0));
+}
+function _routeTiming(r) {
+  if (!COL.HORA_INICIO || !COL.HORA_FIM || !COL.DATA) return null;
+  const hIni = (r[COL.HORA_INICIO] || '').trim();
+  const hFim = (r[COL.HORA_FIM] || '').trim();
+  if (!hIni || !hFim) return null;
+  const dIni = parseDateBR((r[COL.DATA] || '').trim());
+  if (!dIni || isNaN(+dIni)) return null;
+  const secIni = _timeToSec(hIni), secFim = _timeToSec(hFim);
+  if (secIni === null || secFim === null) return null;
+  const start = new Date(dIni.getFullYear(), dIni.getMonth(), dIni.getDate(), 0, 0, secIni);
+  let end = null;
+  const dFimStr = COL.DATA_FIM ? (r[COL.DATA_FIM] || '').trim() : '';
+  if (dFimStr) {
+    const dFim = parseDateBR(dFimStr);
+    if (dFim && !isNaN(+dFim)) end = new Date(dFim.getFullYear(), dFim.getMonth(), dFim.getDate(), 0, 0, secFim);
+  }
+  if (!end) {
+    // sem DATA_FIM confiável: assume mesmo dia; se a hora de fim for menor que a de início, a rota cruzou a meia-noite
+    end = new Date(dIni.getFullYear(), dIni.getMonth(), dIni.getDate(), 0, 0, secFim);
+    if (end < start) end = new Date(end.getTime() + 86400000);
+  }
+  const hours = (end - start) / 3600000;
+  if (!(hours >= 0)) return null;
+  return { start, end, hours };
+}
+// Para rotas ainda em aberto (sem HORA_FIM): estima as horas decorridas desde o início até agora.
+// Só aplica quando o início foi há no máximo 48h — passado disso, é mais provável que seja um
+// dado antigo com HORA_FIM ausente por erro/gap de exportação do que uma rota realmente em curso.
+function _elapsedSinceStart(r) {
+  if (!COL.HORA_INICIO || !COL.DATA) return null;
+  const hIni = (r[COL.HORA_INICIO] || '').trim();
+  if (!hIni) return null;
+  const dIni = parseDateBR((r[COL.DATA] || '').trim());
+  if (!dIni || isNaN(+dIni)) return null;
+  const secIni = _timeToSec(hIni);
+  if (secIni === null) return null;
+  const start = new Date(dIni.getFullYear(), dIni.getMonth(), dIni.getDate(), 0, 0, secIni);
+  const now = new Date();
+  const hours = (now - start) / 3600000;
+  if (hours < 0 || hours > 48) return null;
+  return hours;
 }
 
 // Groups rawData by semana → date → aggregated metrics
