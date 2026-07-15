@@ -1094,7 +1094,7 @@ table.detail tr:hover td { background: var(--surface-1); }
       <div class="detail-card">
         <div class="detail-card-title">⏱ Encerramento de rotas (D+)</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
-          Rotas agrupadas por <strong>quando foram encerradas</strong> em relação ao dia de despacho. <strong>Pendente</strong> = rota sem data de conclusão (ainda não finalizada). <strong>D+1 / D+2</strong> = fechou 1 ou 2 dias depois do despacho. Clique num card para filtrar a tabela.
+          Rotas agrupadas por <strong>quando foram encerradas</strong> em relação ao dia de despacho. <strong>Pendente</strong> = rota sem data de conclusão (ainda não finalizada). <strong>D+1 / D+2</strong> = fechou 1 ou 2 dias depois do despacho. A coluna <strong>ORH (h)</strong> mostra as horas na rota; rotas acima de 12h ("bateram" o limite) indicam onde o MLP deveria ter ativado pernoite/sleepover — use o filtro ao lado da tabela para isolar essas rotas por MLP. Clique num card para filtrar a tabela.
         </div>
         <div id="encSummary" class="enc-summary"></div>
       </div>
@@ -1128,6 +1128,7 @@ table.detail tr:hover td { background: var(--surface-1); }
           <div class="detail-card-title" style="margin:0;border:0;padding:0">Rotas</div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <div id="encFilterBtns" style="display:flex;gap:5px;flex-wrap:wrap"></div>
+            <div id="encOrhFilterBtns" style="display:flex;gap:5px;flex-wrap:wrap"></div>
             <input type="text" id="encSearch" placeholder="ID rota, base, MLP, driver..." oninput="renderEncerramento()" style="border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:5px 10px;font-size:12px;background:var(--surface-1);color:var(--text-primary);outline:none;width:200px;">
             <button class="chart-btn" onclick="copyEncList()">📋 Copiar IDs</button>
           </div>
@@ -1139,10 +1140,12 @@ table.detail tr:hover td { background: var(--surface-1); }
               <th onclick="sortDtbl('encTbl',1)">Base</th>
               <th onclick="sortDtbl('encTbl',2)">MLP</th>
               <th onclick="sortDtbl('encTbl',3)">ID Driver</th>
-              <th onclick="sortDtbl('encTbl',4)">Despacho</th>
-              <th onclick="sortDtbl('encTbl',5)">Conclusão</th>
-              <th onclick="sortDtbl('encTbl',6)">Encerramento</th>
-              <th onclick="sortDtbl('encTbl',7)">Status</th>
+              <th onclick="sortDtbl('encTbl',4)">Insucesso</th>
+              <th onclick="sortDtbl('encTbl',5)">ORH (h)</th>
+              <th onclick="sortDtbl('encTbl',6)">Despacho</th>
+              <th onclick="sortDtbl('encTbl',7)">Conclusão</th>
+              <th onclick="sortDtbl('encTbl',8)">Encerramento</th>
+              <th onclick="sortDtbl('encTbl',9)">Status</th>
             </tr></thead>
             <tbody id="encTblBody"></tbody>
           </table>
@@ -3053,8 +3056,10 @@ function renderModalCR(body, filtered, kpi, bc, carriers) {
    TAB: ENCERRAMENTO D+ (rotas pendentes / fechadas em D+1, D+2...)
 ══════════════════════════════════════════ */
 let encBucketFilter = 'ALL';
+let encOrhFilter = 'ALL';
 let _encRowsFiltered = [];
 function setEncFilter(b) { encBucketFilter = b; renderEncerramento(); }
+function setEncOrhFilter(v) { encOrhFilter = v; renderEncerramento(); }
 
 function _encCompute() {
   const filtered = getFiltered({ includeAbertas: true });   // inclui rotas em andamento (pendentes)
@@ -3085,7 +3090,10 @@ function _encCompute() {
     else if (dPlus === 1) bucket = 'D1';
     else if (dPlus === 2) bucket = 'D2';
     else bucket = 'D3';
-    rows.push({ id:k, base:(r[COL.BASE]||'').trim(), mlp:(r[COL.CARRIER]||'').trim(), drv:(drvOf(r)||'').toString().trim(), desp, conc, encRaw, dPlus, pending, bucket });
+    const ins = Math.max(0, n(r[COL.DESPACHADOS]) - n(r[COL.ENTREGUES]));
+    const hrs = COL.ORH_HOURS ? n(r[COL.ORH_HOURS]) : null;
+    const over12 = hrs !== null && !isNaN(hrs) && hrs > 12;
+    rows.push({ id:k, base:(r[COL.BASE]||'').trim(), mlp:(r[COL.CARRIER]||'').trim(), drv:(drvOf(r)||'').toString().trim(), desp, conc, encRaw, dPlus, pending, bucket, ins, hrs, over12 });
   });
   return rows;
 }
@@ -3119,9 +3127,16 @@ function renderEncerramento() {
     const btns = [['ALL','Todas'],['PEND','Pendentes'],['D0','D+0'],['D1','D+1'],['D2','D+2'],['D3','D+3+']];
     fbEl.innerHTML = btns.map(([k,l]) => `<button class="chart-btn${encBucketFilter===k?' enc-btn-active':''}" onclick="setEncFilter('${k}')">${l}</button>`).join('');
   }
+  const ofbEl = document.getElementById('encOrhFilterBtns');
+  if (ofbEl) {
+    const obtns = [['ALL','ORH: Todas'],['OVER','🔴 Bateram (>12h)'],['UNDER','✅ Não bateram (≤12h)']];
+    ofbEl.innerHTML = obtns.map(([k,l]) => `<button class="chart-btn${encOrhFilter===k?' enc-btn-active':''}" onclick="setEncOrhFilter('${k}')">${l}</button>`).join('');
+  }
   const q = (document.getElementById('encSearch')?.value||'').toLowerCase();
   let rows = all;
   if (encBucketFilter !== 'ALL') rows = rows.filter(x => x.bucket === encBucketFilter);
+  if (encOrhFilter === 'OVER') rows = rows.filter(x => x.over12);
+  else if (encOrhFilter === 'UNDER') rows = rows.filter(x => !x.over12);
   if (q) rows = rows.filter(x => (x.id+' '+x.base+' '+x.mlp+' '+x.drv).toLowerCase().includes(q));
   const rank = { PEND:99, D3:3, D2:2, D1:1, D0:0 };
   rows.sort((a,b) => (rank[b.bucket]-rank[a.bucket]));
@@ -3136,12 +3151,24 @@ function renderEncerramento() {
     };
     tb.innerHTML = rows.slice(0, 1000).map(x => `<tr>
       <td>${x.id||'—'}</td><td>${x.base||'—'}</td><td>${x.mlp||'—'}</td><td>${x.drv||'—'}</td>
+      <td>${x.ins ? '<span class="pill bad">'+x.ins.toLocaleString('pt-BR')+'</span>' : '0'}</td>
+      <td>${x.hrs !== null && !isNaN(x.hrs) ? `<span class="pill ${x.over12?'bad':'good'}">${x.hrs.toFixed(1)}h</span>` : '—'}</td>
       <td>${x.desp||'—'}</td><td>${x.conc||'<span style="color:var(--danger-text)">—</span>'}</td>
       <td>${x.encRaw !== '' ? x.encRaw : (x.pending ? '—' : (x.dPlus<=0?'D+0':'D+'+x.dPlus))}</td>
       <td>${badge(x)}</td></tr>`).join('');
   }
   const cnt = document.getElementById('encCount');
-  if (cnt) cnt.textContent = `${rows.length.toLocaleString('pt-BR')} rota(s) exibida(s)${rows.length>1000?' (mostrando as 1000 primeiras)':''} · ${all.length.toLocaleString('pt-BR')} rotas no total`;
+  if (cnt) {
+    const over12All = all.filter(x => x.over12);
+    const over12Pct = all.length ? (over12All.length/all.length*100).toFixed(1).replace('.',',') : '0';
+    const byMlp12 = {};
+    over12All.forEach(x => { const k = x.mlp||'N/D'; byMlp12[k] = (byMlp12[k]||0)+1; });
+    const topMlp12 = Object.entries(byMlp12).sort((a,b)=>b[1]-a[1])[0];
+    const impactTxt = over12All.length
+      ? ` · ⚠️ ${over12All.length.toLocaleString('pt-BR')} rota(s) >12h no recorte (${over12Pct}%)${topMlp12?` · MLP mais afetada: ${topMlp12[0]} (${topMlp12[1].toLocaleString('pt-BR')})`:''}`
+      : '';
+    cnt.textContent = `${rows.length.toLocaleString('pt-BR')} rota(s) exibida(s)${rows.length>1000?' (mostrando as 1000 primeiras)':''} · ${all.length.toLocaleString('pt-BR')} rotas no total${impactTxt}`;
+  }
   _renderEncDrivers(all);
 }
 
