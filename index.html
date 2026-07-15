@@ -522,6 +522,7 @@ table.detail tr:hover td { background: var(--surface-1); }
     <button class="tab-btn" onclick="showMainTab('tabRota',this)">🗺 Por Rota</button>
     <button class="tab-btn" onclick="showMainTab('tabEncerramento',this)">⏱ Encerramento D+</button>
     <button class="tab-btn" onclick="showMainTab('tabDobra',this)">🔄 Dobra de Rotas</button>
+    <button class="tab-btn" onclick="showMainTab('tabOfensores',this)">🚨 Top Ofensores</button>
   </div>
 
   <!-- ══════ TAB: VISÃO GERAL ══════ -->
@@ -1056,6 +1057,7 @@ table.detail tr:hover td { background: var(--surface-1); }
       </div>
       <div class="detail-card">
         <div class="detail-card-title">Detalhamento por rota — ordenado por maior insucessos</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Passe o mouse sobre o número da coluna <strong>Insucessos</strong> pra ver o detalhamento por motivo já ordenado do maior para o menor — evita ler errado ao rolar as colunas de motivo (que ficam zeradas/"0" pra maioria das rotas).</div>
         <div class="detail-table-wrap" id="rotaTableWrap" style="max-height:560px">
           <table class="dtbl" id="detTblRota">
             <thead><tr>
@@ -1218,6 +1220,67 @@ table.detail tr:hover td { background: var(--surface-1); }
             </tr></thead>
             <tbody id="detTblDobraSemSemBody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ TAB: TOP OFENSORES POR KPI ══════ -->
+  <div id="tabOfensores" class="tab-section">
+    <div class="detail-content">
+      <div class="detail-filter-row" style="align-items:flex-end">
+        <div class="filter-group">
+          <label>Ver por</label>
+          <div style="display:flex;gap:6px">
+            <button class="chart-btn enc-btn-active" id="ofensorDimDriver" onclick="setOfensorDim('driver')">Drivers</button>
+            <button class="chart-btn" id="ofensorDimRota" onclick="setOfensorDim('rota')">Rotas</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Top</label>
+          <select id="ofensorTopN" onchange="renderOfensores()" style="border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:5px 10px;font-size:12px;background:var(--surface-1);color:var(--text-primary);outline:none;">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);max-width:420px">Um gráfico por KPI, sempre com os piores/maiores ofensores primeiro. Clique numa barra pra copiar o ID.</div>
+      </div>
+      <div id="ofensorGrid" class="detail-grid-2">
+        <div class="detail-card" id="ofensorCard_INS">
+          <div class="detail-card-title" id="ofensorTitle_INS">Top drivers por Insucessos</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_INS"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_INS"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_DS">
+          <div class="detail-card-title" id="ofensorTitle_DS">Top drivers por DS %</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_DS"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_DS"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_ORHC">
+          <div class="detail-card-title" id="ofensorTitle_ORHC">Top drivers por ORHC %</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_ORHC"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_ORHC"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_DPPH">
+          <div class="detail-card-title" id="ofensorTitle_DPPH">Top drivers por DPPH</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_DPPH"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_DPPH"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_UV">
+          <div class="detail-card-title" id="ofensorTitle_UV">Top drivers por Não Visitados</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_UV"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_UV"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_CR">
+          <div class="detail-card-title" id="ofensorTitle_CR">Top drivers por Reclamos (CR)</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_CR"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_CR"></canvas></div>
+        </div>
+        <div class="detail-card" id="ofensorCard_ORH">
+          <div class="detail-card-title" id="ofensorTitle_ORH">Top drivers por ORH médio</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px" id="ofensorSub_ORH"></div>
+          <div style="position:relative;width:100%;height:320px"><canvas id="chartOfensor_ORH"></canvas></div>
         </div>
       </div>
     </div>
@@ -3282,6 +3345,7 @@ function showMainTab(id, btn) {
   if (id === 'tabCR')        renderDetailCR();
   if (id === 'tabRota')      renderTabRota();
   if (id === 'tabEncerramento') renderEncerramento();
+  if (id === 'tabOfensores') renderOfensores();
 }
 
 /* ══════════════════════════════════════════
@@ -4661,6 +4725,131 @@ function renderRouteInsChart() {
   _routeInsChart = _buildInsBar('chartRouteIns', sorted.slice(0, topN), meta);
 }
 
+/* ══════════════════════════════════════════
+   ABA: TOP OFENSORES POR KPI
+   Um gráfico vertical por métrica (drivers ou rotas), independente
+   da lógica de Insucessos acima — não reaproveita _insAgg/_buildInsBar
+   de propósito, pra não arriscar quebrar o que já funcionava.
+══════════════════════════════════════════ */
+const OFENSOR_METRICS = [
+  { key:'INS',  label:'Insucessos',      worseWhen:'high', unit:'',  fmt:v=>v.toLocaleString('pt-BR') },
+  { key:'DS',   label:'DS %',            worseWhen:'low',  unit:'%', fmt:v=>fmtPt(v) },
+  { key:'ORHC', label:'ORHC %',          worseWhen:'low',  unit:'%', fmt:v=>fmtPt(v) },
+  { key:'DPPH', label:'DPPH',            worseWhen:'low',  unit:'',  fmt:v=>v.toFixed(2) },
+  { key:'UV',   label:'Não Visitados',   worseWhen:'high', unit:'',  fmt:v=>v.toLocaleString('pt-BR') },
+  { key:'CR',   label:'Reclamos (CR)',   worseWhen:'high', unit:'',  fmt:v=>v.toLocaleString('pt-BR') },
+  { key:'ORH',  label:'ORH médio',       worseWhen:'high', unit:'h', fmt:v=>v.toFixed(1) },
+];
+let _ofensorCharts = {};
+let _ofensorDim = 'driver'; // 'driver' | 'rota'
+
+function _ofensorAgg(dim) {
+  const filtered = getFiltered();
+  const keyFn = dim === 'rota' ? _rotKey : _drvKey;
+  const map = new Map();
+  const seenRoutes = new Set();
+  filtered.forEach(r => {
+    const rid = COL.ROUTE_ID ? (r[COL.ROUTE_ID]||'').toString().trim() : '';
+    if (rid && seenRoutes.has(rid)) return;
+    if (rid) seenRoutes.add(rid);
+    const k = keyFn(r, rid);
+    if (!k) return;
+    const o = map.get(k) || { desp:0, entr:0, ins:0, horasSum:0, horasCount:0, orhcOK:0, orhcTotal:0, uv:0, claims:0, rotas:0 };
+    const desp = n(r[COL.DESPACHADOS]), entr = n(r[COL.ENTREGUES]);
+    o.desp += desp; o.entr += entr; o.rotas++;
+    o.ins += Math.max(0, desp - entr);
+    if (COL.ORH_HOURS) {
+      const orhRaw = n(r[COL.ORH_HOURS]);
+      let h = (orhRaw > 0 && orhRaw <= 24) ? orhRaw : null;
+      if (h === null) { const timing = _routeTiming(r); if (timing && timing.hours > 0) h = timing.hours; }
+      if (h !== null) { o.horasSum += h; o.horasCount++; }
+    }
+    if (COL.ORHC && r[COL.ORHC] !== '' && r[COL.ORHC] !== undefined) { o.orhcTotal++; if (n(r[COL.ORHC]) === 1) o.orhcOK++; }
+    if (COL.UNVISITED) o.uv += n(r[COL.UNVISITED]);
+    if (COL.ID_COM_RECLAMO && (r[COL.ID_COM_RECLAMO]||'').trim() !== '') o.claims++;
+    map.set(k, o);
+  });
+  return map;
+}
+
+function _ofensorValue(o, metricKey) {
+  switch (metricKey) {
+    case 'INS':  return o.ins;
+    case 'DS':   return o.desp > 0 ? (o.entr/o.desp*100) : null;
+    case 'ORHC': return o.orhcTotal > 0 ? (o.orhcOK/o.orhcTotal*100) : null;
+    case 'DPPH': return o.horasSum > 0 ? (o.entr/o.horasSum) : null;
+    case 'UV':   return o.uv;
+    case 'CR':   return o.claims;
+    case 'ORH':  return o.horasCount > 0 ? (o.horasSum/o.horasCount) : null;
+    default: return null;
+  }
+}
+
+function _buildOfensorBar(canvasId, entries, metric) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  if (_ofensorCharts[canvasId]) { _ofensorCharts[canvasId].destroy(); delete _ofensorCharts[canvasId]; }
+  if (!entries.length) { const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); return null; }
+  const labels = entries.map(([k]) => k);
+  const data   = entries.map(([,v]) => v);
+  const chart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: metric.label, data, backgroundColor: data.map((v,i) => i < 3 ? '#d03b3b' : '#e8836e'), borderRadius: 4, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (evt, els, chart) => { if (!els.length) return; showIdCopy(String(chart.data.labels[els[0].index])); },
+      onHover: (evt, els) => { if (evt.native && evt.native.target) evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${metric.fmt(ctx.parsed.y)}${metric.unit}` } },
+        datalabels: { anchor:'end', align:'end', formatter: v => metric.fmt(v)+metric.unit, color:'#2a2926', font:{size:9,weight:'700'}, offset:2, clip:false }
+      },
+      layout: { padding: { top: 20 } },
+      scales: {
+        x: { ticks: { color:'#45433f', font:{size:10}, maxRotation:60 }, grid: { display:false } },
+        y: { ticks: { color:'#45433f', font:{size:10} }, grid: { color:'rgba(128,128,128,0.12)' } }
+      }
+    }
+  });
+  _ofensorCharts[canvasId] = chart;
+  return chart;
+}
+
+function setOfensorDim(dim) {
+  _ofensorDim = dim;
+  document.getElementById('ofensorDimDriver')?.classList.toggle('enc-btn-active', dim==='driver');
+  document.getElementById('ofensorDimRota')?.classList.toggle('enc-btn-active', dim==='rota');
+  renderOfensores();
+}
+
+function renderOfensores() {
+  const grid = document.getElementById('ofensorGrid');
+  if (!grid) return;
+  const topN = parseInt(document.getElementById('ofensorTopN')?.value || '10');
+  const map = _ofensorAgg(_ofensorDim);
+  OFENSOR_METRICS.forEach(metric => {
+    const canvasId = 'chartOfensor_' + metric.key;
+    const titleEl = document.getElementById('ofensorTitle_' + metric.key);
+    const subEl   = document.getElementById('ofensorSub_' + metric.key);
+    const entries = [...map.entries()]
+      .map(([k,o]) => [k, _ofensorValue(o, metric.key), o.ins])
+      .filter(([,v]) => v !== null && !isNaN(v) && (metric.key==='INS'||metric.key==='UV'||metric.key==='CR' ? v>0 : true))
+      .sort((a,b) => {
+        const diff = metric.worseWhen==='low' ? (a[1]-b[1]) : (b[1]-a[1]);
+        return diff !== 0 ? diff : (b[2]-a[2]); // empate -> desempata pela rota/driver com mais insucessos
+      })
+      .slice(0, topN)
+      .map(([k,v]) => [k,v]);
+    if (titleEl) titleEl.textContent = `Top ${topN} ${_ofensorDim==='rota'?'rotas':'drivers'} por ${metric.label}`;
+    if (subEl) {
+      if (!entries.length) subEl.textContent = 'Sem dados suficientes para essa métrica';
+      else if (metric.key === 'ORHC' && _ofensorDim === 'rota') subEl.textContent = 'ORHC é binário por rota (bateu/não bateu) — % só varia de fato agregado por driver. Empate em 0%/100% desempatado por total de insucessos.';
+      else subEl.textContent = `${metric.worseWhen==='low'?'Piores':'Maiores'} primeiro · clique numa barra p/ copiar o ID`;
+    }
+    _buildOfensorBar(canvasId, entries, metric);
+  });
+}
+
 function copyText(str) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(str).catch(() => { _copyFallback(str); });
@@ -4773,7 +4962,8 @@ function renderRotaPage() {
     const activeInsCols = window._rotaActiveInsCols || [];
     const insCells = activeInsCols.map((col, idx) => {
       const v = n(r[col.key]);
-      return `<td style="${idx===0?'border-left:2px solid var(--border-strong);':''}">${v > 0 ? `<span style="color:var(--danger);font-weight:700">${v}</span>` : '—'}</td>`;
+      const cellVal = v > 0 ? `<span style="color:var(--danger);font-weight:700">${v}</span>` : '<span style="color:var(--text-muted)">0</span>';
+      return `<td style="${idx===0?'border-left:2px solid var(--border-strong);':''}">${cellVal}</td>`;
     }).join('');
 
     const tr = document.createElement('tr');
