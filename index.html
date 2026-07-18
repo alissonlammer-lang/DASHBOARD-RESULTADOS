@@ -729,7 +729,11 @@ table.detail tr:hover td { background: var(--surface-1); }
         </div>
       </div>
       <div class="detail-card">
-        <div class="detail-card-title">Ofensores por MLP / Carrier</div>
+        <div class="detail-card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Ofensores por MLP / Carrier</span>
+          <button class="chart-btn" id="minBtn_detTblORHC" onclick="toggleCardMin('body_detTblORHC','minBtn_detTblORHC')" title="Minimizar/expandir">▾ Minimizar</button>
+        </div>
+        <div id="body_detTblORHC">
         <div class="detail-table-wrap">
           <table class="dtbl" id="detTblORHC">
             <thead><tr>
@@ -744,9 +748,39 @@ table.detail tr:hover td { background: var(--surface-1); }
             <tbody id="detTblORHCBody"></tbody>
           </table>
         </div>
+        </div>
       </div>
       <div class="detail-card">
-        <div class="detail-card-title">ORHC % por dia</div>
+        <div class="detail-card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Drivers/Rotas que não bateram o ORHC — detalhamento</span>
+          <button class="chart-btn" id="minBtn_detTblORHCFail" onclick="toggleCardMin('body_detTblORHCFail','minBtn_detTblORHCFail')" title="Minimizar/expandir">▾ Minimizar</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin:2px 0 8px" id="detTblORHCFailCount"></div>
+        <div id="body_detTblORHCFail">
+        <div class="detail-table-wrap">
+          <table class="dtbl" id="detTblORHCFail">
+            <thead><tr>
+              <th onclick="sortDtbl('detTblORHCFail',0)">ID Rota</th>
+              <th onclick="sortDtbl('detTblORHCFail',1)">ID Driver</th>
+              <th onclick="sortDtbl('detTblORHCFail',2)">MLP</th>
+              <th onclick="sortDtbl('detTblORHCFail',3)">Base</th>
+              <th onclick="sortDtbl('detTblORHCFail',4)">Data</th>
+              <th onclick="sortDtbl('detTblORHCFail',5)">ORH (h)</th>
+              <th onclick="sortDtbl('detTblORHCFail',6)">Despachados</th>
+              <th onclick="sortDtbl('detTblORHCFail',7)">Entregues</th>
+              <th onclick="sortDtbl('detTblORHCFail',8)">Insucessos</th>
+            </tr></thead>
+            <tbody id="detTblORHCFailBody"></tbody>
+          </table>
+        </div>
+        </div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>ORHC % por dia</span>
+          <button class="chart-btn" id="minBtn_detTblORHCDia" onclick="toggleCardMin('body_detTblORHCDia','minBtn_detTblORHCDia')" title="Minimizar/expandir">▾ Minimizar</button>
+        </div>
+        <div id="body_detTblORHCDia">
         <div class="detail-table-wrap">
           <table class="dtbl" id="detTblORHCDia">
             <thead><tr>
@@ -760,19 +794,6 @@ table.detail tr:hover td { background: var(--surface-1); }
             <tbody id="detTblORHCDiaBody"></tbody>
           </table>
         </div>
-      </div>
-      <div class="detail-card">
-        <div class="detail-card-title">ORHC — Semana vs Semana por dia</div>
-        <div class="detail-table-wrap">
-          <table class="dtbl" id="detTblORHCSemSem">
-            <thead><tr>
-              <th>Dia</th>
-              <th>Data Atual</th><th>ORHC % Atual</th>
-              <th>Data Ant.</th><th>ORHC % Ant.</th>
-              <th>Δ pp</th><th>↕</th>
-            </tr></thead>
-            <tbody id="detTblORHCSemSemBody"></tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -2200,21 +2221,22 @@ function prevencaoHTML(kpiId, kpi, filtered) {
     const need = Math.ceil(0.985*desp), gap = need - kpi.totalEntregues, on = gap <= 0;
     return box(on, on ? 'Meta de DS batida' : 'Como bater a meta de DS (≥ 98,5%)',
       on ? `Você tem folga de <strong>${fmt(gap)}</strong> entregas acima da meta.`
-         : `Precisa de <strong>${fmt(need)}</strong> entregues (hoje ${fmt(kpi.totalEntregues)} de ${fmt(desp)}). <strong>Faltam ${fmt(gap)} entregas</strong> — equivale a reduzir ${fmt(gap)} insucessos.`);
+         : `Precisa de <strong>${fmt(need)}</strong> entregues (no período filtrado: ${fmt(kpi.totalEntregues)} de ${fmt(desp)}). <strong>Faltam ${fmt(gap)} entregas</strong> — equivale a reduzir ${fmt(gap)} insucessos.`);
   }
   if (kpiId === 'orhc') {
     if (!kpi.orhcDenom) return '';
     const need = Math.ceil(0.85*kpi.orhcDenom), gap = need - kpi.orhcNum, on = gap <= 0;
+    const naoBateram = kpi.orhcDenom - kpi.orhcNum;
     return box(on, on ? 'Meta de ORHC batida' : 'Como bater a meta de ORHC (≥ 85%)',
-      on ? `Você tem folga de <strong>${fmt(gap)}</strong> rotas acima da meta.`
-         : `Precisa de <strong>${fmt(need)}</strong> rotas com entrega de ${fmt(kpi.orhcDenom)} (hoje ${fmt(kpi.orhcNum)}). <strong>Faltam ${fmt(gap)} rotas OK</strong> — foco em rotas zeradas / sem 1ª entrega.`);
+      on ? `No período filtrado, <strong>${fmt(kpi.orhcNum)}</strong> rotas bateram o ORHC de <strong>${fmt(kpi.orhcDenom)}</strong> no total (<strong>${fmt(naoBateram)}</strong> não bateram) — folga de <strong>${fmt(gap)}</strong> rotas acima da meta.`
+         : `No período filtrado, <strong>${fmt(kpi.orhcNum)}</strong> rotas bateram o ORHC e <strong>${fmt(naoBateram)}</strong> não bateram, de <strong>${fmt(kpi.orhcDenom)}</strong> rotas no total. Pra bater a meta de 85% você precisa de <strong>${fmt(need)}</strong> rotas OK — <strong>faltam ${fmt(gap)} rotas</strong> baterem o ORHC.`);
   }
   if (kpiId === 'cr') {
     if (!desp) return '';
     const max = Math.ceil(0.0014*desp) - 1, gap = kpi.totalClaims - max, on = gap <= 0;
     return box(on, on ? 'Meta de CR batida' : 'Como bater a meta de CR (< 0,14%)',
       on ? `Você tem folga de <strong>${fmt(gap)}</strong> reclamos até o limite (máx. ${fmt(max)}).`
-         : `Máximo de <strong>${fmt(max)}</strong> reclamos para ficar < 0,14% (hoje ${fmt(kpi.totalClaims)}). <strong>Precisa reduzir ${fmt(gap)} reclamos.</strong>`);
+         : `Máximo de <strong>${fmt(max)}</strong> reclamos para ficar < 0,14% (no período filtrado: ${fmt(kpi.totalClaims)}). <strong>Precisa reduzir ${fmt(gap)} reclamos.</strong>`);
   }
   if (kpiId === 'insucessos') {
     if (!desp) return '';
@@ -2228,7 +2250,7 @@ function prevencaoHTML(kpiId, kpi, filtered) {
     const motivo = topLabel ? ` Maior ofensor: <strong>${topLabel}</strong> — ${fmt(topVal)} casos (${tot>0?Math.round(topVal/tot*100):0}% dos motivos); ataque este primeiro.` : '';
     return box(on, on ? 'Insucessos dentro do limite' : 'Como manter o DS na meta (reduzir insucessos)',
       (on ? `Folga de <strong>${fmt(gap)}</strong> insucessos até o limite (máx. ${fmt(max)}).`
-          : `Máximo de <strong>${fmt(max)}</strong> insucessos para DS ≥ 98,5% (hoje ${fmt(kpi.insucessos)}). <strong>Reduzir ${fmt(gap)}.</strong>`) + motivo);
+          : `Máximo de <strong>${fmt(max)}</strong> insucessos para DS ≥ 98,5% (no período filtrado: ${fmt(kpi.insucessos)}). <strong>Reduzir ${fmt(gap)}.</strong>`) + motivo);
   }
   return '';
 }
@@ -3331,6 +3353,17 @@ function copyEncList() {
   document.getElementById('waBackdrop').classList.add('open');
 }
 
+// Minimiza/expande o conteúdo de um card genérico (usado em tabelas como
+// "Ofensores por MLP/Carrier" e "ORHC % por dia"), sem afetar outros cards.
+function toggleCardMin(bodyId, btnId) {
+  const body = document.getElementById(bodyId);
+  const btn = document.getElementById(btnId);
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  if (btn) btn.textContent = hidden ? '▾ Minimizar' : '▸ Expandir';
+}
+
 function showMainTab(id, btn) {
   document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -4082,7 +4115,40 @@ function renderDetailORHC() {
       <td><span class="pill ${oV>=85?'good':'bad'}">${fmtPt(oV)}%</span></td>
       <td>${detBadge(oV, oV>=85)}</td></tr>`;
   });
-  renderSemVsSemORHC(buildSemByDate(filtered), 'detTblORHCSemSemBody');
+  // Drivers/Rotas que não bateram o ORHC — detalhamento (ID Rota, ID Driver, tempo de rota etc.)
+  const tbodyFail = document.getElementById('detTblORHCFailBody');
+  if (tbodyFail) {
+    const seenR = new Set();
+    const failRows = [];
+    filtered.forEach(r => {
+      if (!COL.ORHC || r[COL.ORHC] === '' || r[COL.ORHC] === undefined) return;
+      if (n(r[COL.ORHC]) !== 0) return; // só as que NÃO bateram
+      const rid = COL.ROUTE_ID ? (r[COL.ROUTE_ID]||'').toString().trim() : '';
+      if (rid) { if (seenR.has(rid)) return; seenR.add(rid); }
+      const orhRaw = COL.ORH_HOURS ? n(r[COL.ORH_HOURS]) : null;
+      let hrs = (orhRaw !== null && orhRaw > 0 && orhRaw <= 24) ? orhRaw : null;
+      if (hrs === null) { const t = _routeTiming(r); if (t && t.hours > 0) hrs = t.hours; }
+      const desp = n(r[COL.DESPACHADOS]), entr = n(r[COL.ENTREGUES]);
+      failRows.push({
+        id: rid || '—',
+        drv: ((COL.DRIVER && r[COL.DRIVER]) || r['SHP_LG_DRIVER_ID'] || '').toString().trim() || '—',
+        mlp: (r[COL.CARRIER]||'').trim() || '—',
+        base: (r[COL.BASE]||'').trim() || '—',
+        data: (r[COL.DATA]||'').trim() || '—',
+        hrs, desp, entr, ins: Math.max(0, desp - entr),
+      });
+    });
+    failRows.sort((a,b) => (b.hrs ?? -1) - (a.hrs ?? -1));
+    const capN = 300;
+    tbodyFail.innerHTML = failRows.slice(0, capN).map(x => `<tr>
+      <td>${x.id}</td><td>${x.drv}</td><td>${x.mlp}</td><td>${x.base}</td><td>${x.data}</td>
+      <td>${x.hrs!==null ? `<span class="pill ${x.hrs>12?'bad':''}">${x.hrs.toFixed(1)}h</span>` : '—'}</td>
+      <td>${x.desp.toLocaleString('pt-BR')}</td><td>${x.entr.toLocaleString('pt-BR')}</td>
+      <td>${x.ins>0?`<span class="pill bad">${x.ins.toLocaleString('pt-BR')}</span>`:'0'}</td>
+    </tr>`).join('');
+    const cntEl = document.getElementById('detTblORHCFailCount');
+    if (cntEl) cntEl.textContent = `${failRows.length.toLocaleString('pt-BR')} rota(s) não bateram o ORHC no recorte filtrado${failRows.length>capN?` · mostrando as ${capN} com maior tempo de rota` : ' · ordenado por maior tempo de rota'}`;
+  }
 }
 
 /* ══════════════════════════════════════════
